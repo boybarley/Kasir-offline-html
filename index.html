@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Aplikasi Kasir by Boy Barley</title>
+</head>
+<body>
+  <h1>Aplikasi Kasir by Boy Barley</h1>
+<button   id="connectBtn" onClick="connectPrinter()" >Connect Printer</button>
+
+  <h2>Tambah Produk</h2>
+  <form onsubmit="addProduct(event)">
+    <label for="product-code">Kode Produk:</label>
+    <input type="text" id="product-code" required>
+    <label for="product-name">Nama Produk:</label>
+    <input type="text" id="product-name" required>
+    <label for="product-price">Harga:</label>
+    <input type="number" id="product-price" required>
+    <button type="submit">Tambahkan</button>
+  </form>
+
+  <h2>Produk</h2>
+  <table id="product-table">
+    <tr>
+      <th>Kode Produk</th>
+      <th>Nama Produk</th>
+      <th>Harga</th>
+      <th></th>
+      <th></th>
+    </tr>
+  </table>
+
+  <h2>Keranjang Belanja</h2>
+  <table id="cart-table">
+    <tr>
+      <th>Kode Produk</th>
+      <th>Nama Produk</th>
+      <th>Harga</th>
+      <th>Jumlah</th>
+      <th></th>
+    </tr>
+  </table>
+
+  <h3>Total Harga: <span id="total-price">0</span></h3>
+
+  <button onclick="processPayment()">Bayar</button>
+
+  <h2>Data Transaksi</h2>
+  <div id="transaction-div"></div>
+	
+<button onclick="exportToExcel()">Export to Excel</button>
+
+  <script>
+let printerCharacteristic;
+	
+		// Fungsi untuk memeriksa apakah sudah terhubung ke printer sebelumnya
+	function checkPreviousConnection() {
+		navigator.bluetooth.getDevices()
+			.then(devices => {
+				const printerDevice = devices.find(device => device.name === '000018f0-0000-1000-8000-00805f9b34fb'); // Ganti dengan nama printer yang sesuai
+				if (printerDevice) {
+					connectToPrinter(printerDevice);
+				}
+			})
+			.catch(error => {
+				console.error('Gagal memeriksa koneksi sebelumnya:', error);
+			});
+	}
+
+	// Fungsi untuk menghubungkan ke printer Bluetooth
+	function connectPrinter() {
+		navigator.bluetooth.requestDevice({ filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }] })
+			.then(device => device.gatt.connect())
+			.then(server => server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb'))
+			.then(service => service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb'))
+			.then(characteristic => {
+				printerCharacteristic = characteristic;
+				console.log('Terhubung ke printer Bluetooth.');
+					document.getElementById('connectBtn').innerText = 'Printer Terhubung'; // Mengubah teks tombol
+				document.getElementById('connectBtn').disabled = true; // Menonaktifkan tombol
+			})
+			.catch(error => {
+				console.error('Gagal terhubung ke printer Bluetooth:', error);
+			});
+	}
+	  
+	  
+	  
+	  
+    var products = [];
+    var cartItems = [];
+    var totalPrice = 0;
+
+    function loadProducts() {
+      var storedProducts = localStorage.getItem("products");
+      if (storedProducts) {
+        products = JSON.parse(storedProducts);
+      }
+      displayProducts();
+    }
+
+    function loadCart() {
+      var storedCartItems = localStorage.getItem("cartItems");
+      var storedTotalPrice = localStorage.getItem("totalPrice");
+      if (storedCartItems && storedTotalPrice) {
+        cartItems = JSON.parse(storedCartItems);
+        totalPrice = parseFloat(storedTotalPrice);
+      }
+      displayCart();
+    }
+
+    function loadTransactions() {
+      var transactionDiv = document.getElementById("transaction-div");
+      transactionDiv.innerHTML = "";
+      var transactions = localStorage.getItem("transactions");
+      if (transactions) {
+        var transactionList = JSON.parse(transactions);
+        for (var i = 0; i < transactionList.length; i++) {
+          var transaction = transactionList[i];
+          var transactionHTML = "<div><h4>Tanggal Transaksi: " + transaction.date + "</h4><ul>";
+          for (var j = 0; j < transaction.items.length; j++) {
+            var item = transaction.items[j];
+            transactionHTML += "<li>Kode Produk: " + item.code + ", Nama Produk: " + item.name + ", Harga: " + item.price + ", Jumlah: " + item.quantity + "</li>";
+          }
+          transactionHTML += "</ul><p>Total Harga: " + transaction.totalPrice + "</p></div>";
+          transactionDiv.innerHTML += transactionHTML;
+        }
+      }
+    }
+
+    function displayProducts() {
+      var productTable = document.getElementById("product-table");
+      productTable.innerHTML = "<tr><th>Kode Produk</th><th>Nama Produk</th><th>Harga</th><th></th><th></th></tr>";
+      for (var i = 0; i < products.length; i++) {
+        var product = products[i];
+        productTable.innerHTML += "<tr><td>" + product.code + "</td><td>" + product.name + "</td><td>" + product.price + "</td><td><button onclick='editProduct(" + i + ")'>Edit</button></td><td><button onclick='removeProduct(" + i + ")'>Hapus</button></td><td><button onclick='addToCart(" + i + ")'>Tambah</button></td></tr>";
+      }
+    }
+
+    function addProduct(event) {
+      event.preventDefault();
+      var productCode = document.getElementById("product-code").value;
+      var productName = document.getElementById("product-name").value;
+      var productPrice = parseFloat(document.getElementById("product-price").value);
+      if (productCode && productName && productPrice) {
+        var product = { code: productCode, name: productName, price: productPrice };
+        products.push(product);
+        displayProducts();
+        saveProducts();
+        document.getElementById("product-code").value = "";
+        document.getElementById("product-name").value = "";
+        document.getElementById("product-price").value = "";
+      }
+    }
+
+    function editProduct(index) {
+      var product = products[index];
+      var newCode = prompt("Masukkan kode produk baru:", product.code);
+      var newName = prompt("Masukkan nama produk baru:", product.name);
+      var newPrice = parseFloat(prompt("Masukkan harga baru:", product.price));
+      if (newCode && newName && newPrice) {
+        product.code = newCode;
+        product.name = newName;
+        product.price = newPrice;
+        displayProducts();
+        saveProducts();
+      }
+    }
+
+    function removeProduct(index) {
+      products.splice(index, 1);
+      displayProducts();
+      saveProducts();
+    }
+
+    function addToCart(index) {
+      var product = products[index];
+      var existingItem = cartItems.find(item => item.code === product.code);
+      if (existingItem) {
+        existingItem.quantity++;
+        existingItem.total = existingItem.quantity * existingItem.price;
+      } else {
+        var newItem = {
+          code: product.code,
+          name: product.name,
+          price: product.price,
+          quantity: 1,
+          total: product.price
+        };
+        cartItems.push(newItem);
+      }
+      totalPrice += product.price;
+      displayCart();
+      saveCart();
+    }
+
+    function removeFromCart(index) {
+      var item = cartItems[index];
+      totalPrice -= item.total;
+      cartItems.splice(index, 1);
+      displayCart();
+      saveCart();
+    }
+
+    function displayCart() {
+      var cartTable = document.getElementById("cart-table");
+      var totalPriceElement = document.getElementById("total-price");
+      cartTable.innerHTML = "<tr><th>Kode Produk</th><th>Nama Produk</th><th>Harga</th><th>Jumlah</th><th></th></tr>";
+      for (var i = 0; i < cartItems.length; i++) {
+        var item = cartItems[i];
+        cartTable.innerHTML += "<tr><td>" + item.code + "</td><td>" + item.name + "</td><td>" + item.price + "</td><td>" + item.quantity + "</td><td><button onclick='removeFromCart(" + i + ")'>Hapus</button></td></tr>";
+      }
+      totalPriceElement.textContent = totalPrice;
+    }
+
+    function processPayment() {
+      var payment = parseFloat(prompt("Masukkan jumlah uang bayar:"));
+      var change = payment - totalPrice;
+      alert("Uang Kembalian: " + change);
+      saveTransaction(payment, change);
+      clearCart();
+    }
+
+    function saveProducts() {
+      localStorage.setItem("products", JSON.stringify(products));
+    }
+
+    function saveCart() {
+      localStorage.setItem("cartItems", JSON.stringify(cartItems));
+      localStorage.setItem("totalPrice", totalPrice);
+    }
+
+    function saveTransaction(payment, change) {
+      var currentDate = new Date().toLocaleDateString();
+      var transaction = {
+         date: getCurrentDate(),
+        items: cartItems,
+        totalPrice: totalPrice,
+        payment: payment,
+        change: change
+      };
+      var transactions = localStorage.getItem("transactions");
+      var transactionList = [];
+      if (transactions) {
+        transactionList = JSON.parse(transactions);
+      }
+      transactionList.push(transaction);
+      localStorage.setItem("transactions", JSON.stringify(transactionList));
+      loadTransactions();
+    }
+	  
+	  
+	  
+    function getCurrentDate() {
+      var date = new Date();
+      var year = date.getFullYear();
+      var month = ("0" + (date.getMonth() + 1)).slice(-2);
+      var day = ("0" + date.getDate()).slice(-2);
+      var hours = ("0" + date.getHours()).slice(-2);
+      var minutes = ("0" + date.getMinutes()).slice(-2);
+      var seconds = ("0" + date.getSeconds()).slice(-2);
+      return year + "-" + month + "-" + day + " " + hours + ":" + minutes + ":" + seconds;
+    }
+
+    function clearCart() {
+      cartItems = [];
+      totalPrice = 0;
+      displayCart();
+      saveCart();
+    }
+	  
+	  
+	    function exportToExcel() {
+      var transactions = JSON.parse(localStorage.getItem("transactions"));
+      if (transactions && transactions.length > 0) {
+        var csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Tanggal Transaksi,Produk,Jumlah,Total Harga,Pembayaran,Kembalian\n";
+        transactions.forEach(function(transaction) {
+          var transactionDate = transaction.date;
+          var transactionItems = transaction.items;
+          var transactionTotal = transaction.totalPrice;
+          var transactionPayment = transaction.payment;
+          var transactionChange = transaction.change;
+          var productsString = transactionItems.map(item => item.name + " (" + item.quantity + ")").join(", ");
+          csvContent += transactionDate + "," + productsString + "," + transactionTotal + "," + transactionPayment + "," + transactionChange + "\n";
+        });
+
+        var encodedUri = encodeURI(csvContent);
+        var link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "transactions.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        alert("Tidak ada data transaksi yang dapat diekspor.");
+      }
+    }
+
+    window.onload = function() {
+      loadProducts();
+      loadCart();
+      loadTransactions();
+    };
+  </script>
+</body>
+</html>
